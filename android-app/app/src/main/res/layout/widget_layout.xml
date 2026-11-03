@@ -3,44 +3,61 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@android:color/transparent"
     android:orientation="vertical"
     android:padding="12dp"
-    android:background="#E61E1E1E">
+    android:gravity="center_vertical">
 
     <TextView
         android:id="@+id/txt_titulo"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Estado Transporte ⟳"
-        android:textColor="#9E9E9E"
-        android:textSize="11sp" />
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4" />
 
     <TextView
         android:id="@+id/txt_subte"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="Subte C: ..."
+        android:layout_marginTop="4dp"
+        android:text="Subte C: ✅"
         android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textSize="14sp"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4" />
 
     <TextView
         android:id="@+id/txt_roca"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="Roca Korn: ..."
+        android:layout_marginTop="2dp"
+        android:text="Roca Korn: ✅"
         android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+        android:textSize="14sp"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4" />
 
     <TextView
         android:id="@+id/txt_hora"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="Toca para actualizar"
-        android:textColor="#757575"
-        android:textSize="10sp" />
+        android:layout_marginTop="4dp"
+        android:text="Act: --:-- hs"
+        android:textColor="#E0E0E0"
+        android:textSize="11sp"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="4" />
+
 </LinearLayout>
