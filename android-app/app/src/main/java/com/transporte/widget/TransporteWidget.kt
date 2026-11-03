@@ -7,16 +7,27 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 
 class TransporteWidget : AppWidgetProvider() {
 
     companion object {
         const val ACTION_REFRESH = "com.transporte.widget.ACTION_REFRESH"
-        private const val JSON_URL = "https://raw.githubusercontent.com/leomiliano07/transporte-widget/main/status.json"
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -56,50 +67,113 @@ class TransporteWidget : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.txt_hora, pendingIntent)
     }
 
+    // Equivalente en Kotlin a ctx.check_hostname = False y ctx.verify_mode = ssl.CERT_NONE
+    private fun descargarJson(urlStr: String): String {
+        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) {}
+            override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) {}
+        })
+
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, trustAllCerts, SecureRandom())
+        }
+
+        val url = URL("$urlStr?t=${System.currentTimeMillis()}")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            if (this is HttpsURLConnection) {
+                sslSocketFactory = sslContext.socketFactory
+                hostnameVerifier = HostnameVerifier { _, _ -> true }
+            }
+            requestMethod = "GET"
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+            setRequestProperty("Cache-Control", "no-cache")
+            connectTimeout = 10000
+            readTimeout = 10000
+            useCaches = false
+        }
+
+        return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+    }
+
+    private fun getSubteC(): String {
+        try {
+            val raw = descargarJson("https://www.metrovias.com.ar/servicios/subte.json")
+            val data = JSONArray(raw)
+            for (i in 0 until data.length()) {
+                val linea = data.getJSONObject(i)
+                val cod = linea.optString("linea", "")
+                val nombre = linea.optString("nombre", "")
+                if (cod == "C" || nombre.contains("C", ignoreCase = true)) {
+                    val estado = linea.optString("estado", "Normal").trim().ifEmpty { "Normal" }
+                    val mensaje = linea.optString("mensaje", "").trim()
+                    return if (mensaje.isNotEmpty() && !mensaje.equals(estado, ignoreCase = true)) {
+                        "$estado ($mensaje)"
+                    } else {
+                        estado
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Si el endpoint no responde, devuelve el valor por defecto igual que en Python
+        }
+        return "Normal (Sin novedades)"
+    }
+
+    private fun getTrenRocaKorn(): String {
+        try {
+            val raw = descargarJson("https://trenesargentinos.gob.ar/api/estado-lineas")
+            val data = JSONObject(raw)
+            val lineas = data.optJSONArray("lineas") ?: JSONArray()
+            for (i in 0 until lineas.length()) {
+                val linea = lineas.getJSONObject(i)
+                if (linea.optString("nombre", "").lowercase().contains("roca")) {
+                    val ramales = linea.optJSONArray("ramales") ?: JSONArray()
+                    for (j in 0 until ramales.length()) {
+                        val ramal = ramales.getJSONObject(j)
+                        if (ramal.optString("nombre", "").lowercase().contains("korn")) {
+                            val estado = ramal.optString("estado", "Normal").trim().ifEmpty { "Normal" }
+                            val mensaje = ramal.optString("mensaje", "").trim()
+                            return if (mensaje.isNotEmpty() && !mensaje.equals(estado, ignoreCase = true)) {
+                                "$estado ($mensaje)"
+                            } else {
+                                estado
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback igual que en Python
+        }
+        return "Normal (A horario)"
+    }
+
     private fun actualizar(context: Context, manager: AppWidgetManager, widgetId: Int) {
         val pendingIntent = getClickPendingIntent(context)
 
         val loadingViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-            setTextViewText(R.id.txt_hora, "Actualizando...")
+            setTextViewText(R.id.txt_hora, "Actualizando en vivo...")
             vincularClicks(this, pendingIntent)
         }
         manager.updateAppWidget(widgetId, loadingViews)
 
         thread {
-            try {
-                // El timestamp obliga a GitHub y a Android a traer el archivo nuevo sin caché
-                val url = URL("$JSON_URL?t=${System.currentTimeMillis()}")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    setRequestProperty("User-Agent", "Mozilla/5.0")
-                    setRequestProperty("Cache-Control", "no-cache")
-                    connectTimeout = 8000
-                    readTimeout = 8000
-                    useCaches = false
-                }
+            val subte = getSubteC()
+            val roca = getTrenRocaKorn()
 
-                val text = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(text)
-
-                val subte = json.optJSONObject("subte_c")?.optString("estado", "Normal") ?: "Normal"
-                val roca = json.optJSONObject("tren_roca")?.optString("estado", "Normal") ?: "Normal"
-                val hora = json.optString("actualizado", "--:--")
-
-                val updatedViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-                    setTextViewText(R.id.txt_subte, "Subte C: $subte")
-                    setTextViewText(R.id.txt_roca, "Roca Korn: $roca")
-                    setTextViewText(R.id.txt_hora, "Act: $hora hs (toca para refrescar)")
-                    vincularClicks(this, pendingIntent)
-                }
-                manager.updateAppWidget(widgetId, updatedViews)
-
-            } catch (e: Exception) {
-                val errViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-                    setTextViewText(R.id.txt_hora, "Error de red (toca para reintentar)")
-                    vincularClicks(this, pendingIntent)
-                }
-                manager.updateAppWidget(widgetId, errViews)
+            val sdf = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+                timeZone = TimeZone.getTimeZone("America/Argentina/Buenos_Aires")
             }
+            val now = sdf.format(Date())
+
+            val updatedViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
+                setTextViewText(R.id.txt_subte, "Subte C: $subte")
+                setTextViewText(R.id.txt_roca, "Roca Korn: $roca")
+                setTextViewText(R.id.txt_hora, "Act: $now hs (toca para refrescar)")
+                vincularClicks(this, pendingIntent)
+            }
+            manager.updateAppWidget(widgetId, updatedViews)
         }
     }
 }
