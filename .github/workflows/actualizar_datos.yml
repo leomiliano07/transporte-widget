@@ -2,9 +2,13 @@ name: Actualizar Estado
 
 on:
   schedule:
-    # Corre cada 15 min todos los días
     - cron: '*/15 * * * *'
   workflow_dispatch:
+
+# Evita que dos corridas se pisen al mismo tiempo
+concurrency:
+  group: actualizar-estado
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -32,4 +36,6 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add status.json
           git commit -m "chore: status.json actualizado [skip ci]" || exit 0
-          git push
+          git pull --rebase -X theirs origin main
+          git push origin main
+          
