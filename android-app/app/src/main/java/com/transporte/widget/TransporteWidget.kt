@@ -31,18 +31,38 @@ class TransporteWidget : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        for (id in appWidgetIds) {
-            actualizar(context, appWidgetManager, id)
-        }
+        // Todo el trabajo se traslada a onReceive para poder usar goAsync()
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        
         if (intent.action == ACTION_REFRESH || intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
+            
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, TransporteWidget::class.java))
+            
+            // Le avisa a Android que haremos trabajo en segundo plano para que NO mate la app
+            val pendingResult = goAsync() 
+
             for (id in ids) {
-                actualizar(context, manager, id)
+                val loadingViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
+                    setTextViewText(R.id.txt_hora, "Actualizando...")
+                    vincularClicks(this, getClickPendingIntent(context))
+                }
+                manager.updateAppWidget(id, loadingViews)
+            }
+
+            // Ejecutar la red en hilo secundario protegido
+            thread {
+                try {
+                    for (id in ids) {
+                        realizarConsultaRed(context, manager, id)
+                    }
+                } finally {
+                    // Libera el proceso una vez que los datos se actualizaron en pantalla
+                    pendingResult.finish()
+                }
             }
         }
     }
@@ -52,9 +72,7 @@ class TransporteWidget : AppWidgetProvider() {
             action = ACTION_REFRESH
         }
         return PendingIntent.getBroadcast(
-            context,
-            0,
-            intent,
+            context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
@@ -87,11 +105,10 @@ class TransporteWidget : AppWidgetProvider() {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
             setRequestProperty("Cache-Control", "no-cache")
-            connectTimeout = 10000
-            readTimeout = 10000
+            connectTimeout = 9000
+            readTimeout = 9000
             useCaches = false
         }
-
         return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
     }
 
@@ -101,18 +118,13 @@ class TransporteWidget : AppWidgetProvider() {
         val textoCompleto = "$estado $mensaje".lowercase()
 
         return when {
-            textoCompleto.contains("interrumpido") ||
-            textoCompleto.contains("suspendido") ||
-            textoCompleto.contains("cancelado") ||
-            textoCompleto.contains("cerrad") -> {
+            textoCompleto.contains("interrumpido") || textoCompleto.contains("suspendido") ||
+            textoCompleto.contains("cancelado") || textoCompleto.contains("cerrad") -> {
                 val detalle = if (mensaje.isNotEmpty()) mensaje else estado
                 "❌ $detalle"
             }
-            textoCompleto.contains("demora") ||
-            textoCompleto.contains("limitado") ||
-            textoCompleto.contains("reducido") ||
-            textoCompleto.contains("alerta") ||
-            textoCompleto.contains("precauci") -> {
+            textoCompleto.contains("demora") || textoCompleto.contains("limitado") ||
+            textoCompleto.contains("reducido") || textoCompleto.contains("alerta") -> {
                 val detalle = if (mensaje.isNotEmpty()) mensaje else estado
                 "⚠️ $detalle"
             }
@@ -126,17 +138,11 @@ class TransporteWidget : AppWidgetProvider() {
             val data = JSONArray(raw)
             for (i in 0 until data.length()) {
                 val linea = data.getJSONObject(i)
-                val cod = linea.optString("linea", "")
-                val nombre = linea.optString("nombre", "")
-                if (cod == "C" || nombre.contains("C", ignoreCase = true)) {
-                    val estado = linea.optString("estado", "Normal")
-                    val mensaje = linea.optString("mensaje", "")
-                    return formatearIcono(estado, mensaje)
+                if (linea.optString("linea", "") == "C" || linea.optString("nombre", "").contains("C", true)) {
+                    return formatearIcono(linea.optString("estado", "Normal"), linea.optString("mensaje", ""))
                 }
             }
-        } catch (e: Exception) {
-            // Fallback en caso de caída de la web de Metrovías
-        }
+        } catch (e: Exception) { }
         return "✅"
     }
 
@@ -152,44 +158,30 @@ class TransporteWidget : AppWidgetProvider() {
                     for (j in 0 until ramales.length()) {
                         val ramal = ramales.getJSONObject(j)
                         if (ramal.optString("nombre", "").lowercase().contains("korn")) {
-                            val estado = ramal.optString("estado", "Normal")
-                            val mensaje = ramal.optString("mensaje", "")
-                            return formatearIcono(estado, mensaje)
+                            return formatearIcono(ramal.optString("estado", "Normal"), ramal.optString("mensaje", ""))
                         }
                     }
                 }
             }
-        } catch (e: Exception) {
-            // Fallback en caso de caída de la API de Trenes Argentinos
-        }
+        } catch (e: Exception) { }
         return "✅"
     }
 
-    private fun actualizar(context: Context, manager: AppWidgetManager, widgetId: Int) {
-        val pendingIntent = getClickPendingIntent(context)
+    private fun realizarConsultaRed(context: Context, manager: AppWidgetManager, widgetId: Int) {
+        val subte = getSubteC()
+        val roca = getTrenRocaKorn()
 
-        val loadingViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-            setTextViewText(R.id.txt_hora, "Actualizando...")
-            vincularClicks(this, pendingIntent)
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+            timeZone = TimeZone.getTimeZone("America/Argentina/Buenos_Aires")
         }
-        manager.updateAppWidget(widgetId, loadingViews)
+        val now = sdf.format(Date())
 
-        thread {
-            val subte = getSubteC()
-            val roca = getTrenRocaKorn()
-
-            val sdf = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
-                timeZone = TimeZone.getTimeZone("America/Argentina/Buenos_Aires")
-            }
-            val now = sdf.format(Date())
-
-            val updatedViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-                setTextViewText(R.id.txt_subte, "Subte C: $subte")
-                setTextViewText(R.id.txt_roca, "Roca Korn: $roca")
-                setTextViewText(R.id.txt_hora, "Act: $now hs")
-                vincularClicks(this, pendingIntent)
-            }
-            manager.updateAppWidget(widgetId, updatedViews)
+        val updatedViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
+            setTextViewText(R.id.txt_subte, "Subte C: $subte")
+            setTextViewText(R.id.txt_roca, "Roca Korn: $roca")
+            setTextViewText(R.id.txt_hora, "Act: $now hs")
+            vincularClicks(this, getClickPendingIntent(context))
         }
+        manager.updateAppWidget(widgetId, updatedViews)
     }
 }
