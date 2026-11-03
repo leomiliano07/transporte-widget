@@ -5,7 +5,6 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
-# Evita que dos corridas se pisen al mismo tiempo
 concurrency:
   group: actualizar-estado
   cancel-in-progress: true
@@ -27,7 +26,7 @@ jobs:
       - name: Instalar pytz
         run: pip install pytz
 
-      - name: Actualizar y subir status.json
+      - name: Ejecutar y subir status.json
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -37,4 +36,3 @@ jobs:
           git add -f status.json
           git commit -m "chore: status.json actualizado [skip ci]" || exit 0
           git push origin main --force
-          
