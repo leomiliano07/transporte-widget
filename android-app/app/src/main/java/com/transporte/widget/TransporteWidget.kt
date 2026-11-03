@@ -67,7 +67,6 @@ class TransporteWidget : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.txt_hora, pendingIntent)
     }
 
-    // Equivalente en Kotlin a ctx.check_hostname = False y ctx.verify_mode = ssl.CERT_NONE
     private fun descargarJson(urlStr: String): String {
         val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
             override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
@@ -96,6 +95,31 @@ class TransporteWidget : AppWidgetProvider() {
         return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
     }
 
+    private fun formatearIcono(estadoRaw: String, mensajeRaw: String): String {
+        val estado = estadoRaw.trim()
+        val mensaje = mensajeRaw.trim()
+        val textoCompleto = "$estado $mensaje".lowercase()
+
+        return when {
+            textoCompleto.contains("interrumpido") ||
+            textoCompleto.contains("suspendido") ||
+            textoCompleto.contains("cancelado") ||
+            textoCompleto.contains("cerrad") -> {
+                val detalle = if (mensaje.isNotEmpty()) mensaje else estado
+                "❌ $detalle"
+            }
+            textoCompleto.contains("demora") ||
+            textoCompleto.contains("limitado") ||
+            textoCompleto.contains("reducido") ||
+            textoCompleto.contains("alerta") ||
+            textoCompleto.contains("precauci") -> {
+                val detalle = if (mensaje.isNotEmpty()) mensaje else estado
+                "⚠️ $detalle"
+            }
+            else -> "✅"
+        }
+    }
+
     private fun getSubteC(): String {
         try {
             val raw = descargarJson("https://www.metrovias.com.ar/servicios/subte.json")
@@ -105,19 +129,15 @@ class TransporteWidget : AppWidgetProvider() {
                 val cod = linea.optString("linea", "")
                 val nombre = linea.optString("nombre", "")
                 if (cod == "C" || nombre.contains("C", ignoreCase = true)) {
-                    val estado = linea.optString("estado", "Normal").trim().ifEmpty { "Normal" }
-                    val mensaje = linea.optString("mensaje", "").trim()
-                    return if (mensaje.isNotEmpty() && !mensaje.equals(estado, ignoreCase = true)) {
-                        "$estado ($mensaje)"
-                    } else {
-                        estado
-                    }
+                    val estado = linea.optString("estado", "Normal")
+                    val mensaje = linea.optString("mensaje", "")
+                    return formatearIcono(estado, mensaje)
                 }
             }
         } catch (e: Exception) {
-            // Si el endpoint no responde, devuelve el valor por defecto igual que en Python
+            // Fallback en caso de caída de la web de Metrovías
         }
-        return "Normal (Sin novedades)"
+        return "✅"
     }
 
     private fun getTrenRocaKorn(): String {
@@ -132,28 +152,24 @@ class TransporteWidget : AppWidgetProvider() {
                     for (j in 0 until ramales.length()) {
                         val ramal = ramales.getJSONObject(j)
                         if (ramal.optString("nombre", "").lowercase().contains("korn")) {
-                            val estado = ramal.optString("estado", "Normal").trim().ifEmpty { "Normal" }
-                            val mensaje = ramal.optString("mensaje", "").trim()
-                            return if (mensaje.isNotEmpty() && !mensaje.equals(estado, ignoreCase = true)) {
-                                "$estado ($mensaje)"
-                            } else {
-                                estado
-                            }
+                            val estado = ramal.optString("estado", "Normal")
+                            val mensaje = ramal.optString("mensaje", "")
+                            return formatearIcono(estado, mensaje)
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            // Fallback igual que en Python
+            // Fallback en caso de caída de la API de Trenes Argentinos
         }
-        return "Normal (A horario)"
+        return "✅"
     }
 
     private fun actualizar(context: Context, manager: AppWidgetManager, widgetId: Int) {
         val pendingIntent = getClickPendingIntent(context)
 
         val loadingViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-            setTextViewText(R.id.txt_hora, "Actualizando en vivo...")
+            setTextViewText(R.id.txt_hora, "Actualizando...")
             vincularClicks(this, pendingIntent)
         }
         manager.updateAppWidget(widgetId, loadingViews)
@@ -170,7 +186,7 @@ class TransporteWidget : AppWidgetProvider() {
             val updatedViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
                 setTextViewText(R.id.txt_subte, "Subte C: $subte")
                 setTextViewText(R.id.txt_roca, "Roca Korn: $roca")
-                setTextViewText(R.id.txt_hora, "Act: $now hs (toca para refrescar)")
+                setTextViewText(R.id.txt_hora, "Act: $now hs")
                 vincularClicks(this, pendingIntent)
             }
             manager.updateAppWidget(widgetId, updatedViews)
