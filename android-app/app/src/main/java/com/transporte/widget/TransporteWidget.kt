@@ -48,24 +48,31 @@ class TransporteWidget : AppWidgetProvider() {
         )
     }
 
+    private fun vincularClicks(views: RemoteViews, pendingIntent: PendingIntent) {
+        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
+        views.setOnClickPendingIntent(R.id.txt_titulo, pendingIntent)
+        views.setOnClickPendingIntent(R.id.txt_subte, pendingIntent)
+        views.setOnClickPendingIntent(R.id.txt_roca, pendingIntent)
+        views.setOnClickPendingIntent(R.id.txt_hora, pendingIntent)
+    }
+
     private fun actualizar(context: Context, manager: AppWidgetManager, widgetId: Int) {
         val pendingIntent = getClickPendingIntent(context)
 
-        // Estado inicial de carga
-        val views = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-            setTextViewText(R.id.txt_hora, "Cargando...")
-            setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-            setOnClickPendingIntent(R.id.txt_titulo, pendingIntent)
-            setOnClickPendingIntent(R.id.txt_hora, pendingIntent)
+        val loadingViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
+            setTextViewText(R.id.txt_hora, "Actualizando...")
+            vincularClicks(this, pendingIntent)
         }
-        manager.updateAppWidget(widgetId, views)
+        manager.updateAppWidget(widgetId, loadingViews)
 
         thread {
             try {
-                val url = URL(JSON_URL)
+                // El timestamp obliga a GitHub y a Android a traer el archivo nuevo sin caché
+                val url = URL("$JSON_URL?t=${System.currentTimeMillis()}")
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("User-Agent", "Mozilla/5.0")
+                    setRequestProperty("Cache-Control", "no-cache")
                     connectTimeout = 8000
                     readTimeout = 8000
                     useCaches = false
@@ -75,27 +82,21 @@ class TransporteWidget : AppWidgetProvider() {
                 val json = JSONObject(text)
 
                 val subte = json.optJSONObject("subte_c")?.optString("estado", "Normal") ?: "Normal"
-                val subteMsg = json.optJSONObject("subte_c")?.optString("mensaje", "") ?: ""
                 val roca = json.optJSONObject("tren_roca")?.optString("estado", "Normal") ?: "Normal"
-                val rocaMsg = json.optJSONObject("tren_roca")?.optString("mensaje", "") ?: ""
                 val hora = json.optString("actualizado", "--:--")
 
                 val updatedViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
                     setTextViewText(R.id.txt_subte, "Subte C: $subte")
                     setTextViewText(R.id.txt_roca, "Roca Korn: $roca")
                     setTextViewText(R.id.txt_hora, "Act: $hora hs (toca para refrescar)")
-                    setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-                    setOnClickPendingIntent(R.id.txt_titulo, pendingIntent)
-                    setOnClickPendingIntent(R.id.txt_hora, pendingIntent)
+                    vincularClicks(this, pendingIntent)
                 }
                 manager.updateAppWidget(widgetId, updatedViews)
 
             } catch (e: Exception) {
                 val errViews = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-                    setTextViewText(R.id.txt_hora, "Error conexión. Toca para reintentar")
-                    setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-                    setOnClickPendingIntent(R.id.txt_titulo, pendingIntent)
-                    setOnClickPendingIntent(R.id.txt_hora, pendingIntent)
+                    setTextViewText(R.id.txt_hora, "Error de red (toca para reintentar)")
+                    vincularClicks(this, pendingIntent)
                 }
                 manager.updateAppWidget(widgetId, errViews)
             }
