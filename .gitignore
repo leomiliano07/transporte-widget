@@ -1,0 +1,9 @@
+status.json
+.gradle/
+build/
+android-app/app/build/
+*.iml
+.idea/
+local.properties
+__pycache__/
+*.pyc

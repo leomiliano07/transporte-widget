@@ -1,0 +1,35 @@
+name: Actualizar Estado
+
+on:
+  schedule:
+    - cron: '*/15 8-23 * * 1-5'
+    - cron: '*/15 0-2 * * 2-6'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar pytz
+        run: pip install pytz
+
+      - name: Ejecutar script
+        run: python backend/fetch_status.py
+
+      - name: Guardar cambios
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add status.json
+          git commit -m "chore: status.json actualizado [skip ci]" || exit 0
+          git push
